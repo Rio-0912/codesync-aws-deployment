@@ -1,0 +1,100 @@
+- hosts: all
+  become: yes
+  tasks:
+    - name: Update apt cache and upgrade packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Install common dependencies
+      apt:
+        name:
+          - curl
+          - git
+          - wget
+          - unzip
+          - build-essential
+          - ca-certificates
+          - apt-transport-https
+          - software-properties-common
+          - gnupg2
+        state: present
+
+    - name: Download NodeSource setup script
+      get_url:
+        url: https://deb.nodesource.com/setup_18.x
+        dest: /tmp/setup_nodejs.sh
+        mode: '0755'
+
+    - name: Run NodeSource setup script
+      command: /tmp/setup_nodejs.sh
+
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: Remove swap from fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: Enable kernel modules for k8s
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Add kernel modules to load at boot
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Set sysctl params for k8s
+      sysctl:
+        name: "{{ item }}"
+        value: '1'
+        state: present
+        sysctl_set: yes
+        reload: yes
+      loop:
+        - net.bridge.bridge-nf-call-iptables
+        - net.bridge.bridge-nf-call-ip6tables
+        - net.ipv4.ip_forward
+
+    - name: Install containerd
+      apt:
+        name: containerd
+        state: present
+
+    - name: Create containerd config dir
+      file:
+        path: /etc/containerd
+        state: directory
+
+    - name: Configure containerd
+      shell: containerd config default | tee /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Set SystemdCgroup to true in containerd config
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+      notify: Restart containerd
+
+  handlers:
+    - name: Restart containerd
+      service:
+        name: containerd
+        state: restarted
