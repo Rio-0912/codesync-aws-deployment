@@ -1,0 +1,17 @@
+- hosts: frontend, backend
+  become: yes
+  tasks:
+    - name: Check if kubelet.conf exists
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Copy join command from local to worker
+      copy:
+        src: join-command.txt
+        dest: /tmp/join-command.sh
+        mode: 0777
+
+    - name: Join cluster
+      command: sh /tmp/join-command.sh
+      when: not kubelet_conf.stat.exists
