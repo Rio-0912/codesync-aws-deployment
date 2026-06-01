@@ -1,0 +1,24 @@
+- hosts: control
+  become: yes
+  become_user: ubuntu
+  tasks:
+    - name: Copy k8s directory to control node
+      copy:
+        src: ../../k8s
+        dest: /home/ubuntu/
+        owner: ubuntu
+        group: ubuntu
+        mode: 0755
+
+    - name: Apply namespace
+      command: kubectl apply -f /home/ubuntu/k8s/namespace.yaml
+
+    - name: Apply postgres
+      command: kubectl apply -f /home/ubuntu/k8s/postgres/
+
+    - name: Apply backend
+      command: kubectl apply -f /home/ubuntu/k8s/backend/
+
+    - name: Apply frontend
+      command: kubectl apply -f /home/ubuntu/k8s/frontend/
+
