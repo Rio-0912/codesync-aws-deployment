@@ -1,0 +1,18 @@
+- hosts: control
+  become: yes
+  become_user: ubuntu
+  tasks:
+    - name: Label control node
+      shell: |
+        NODE=$(kubectl get nodes -o wide | awk '/10\.0\.1\.10/ {print $1}')
+        kubectl label node $NODE role=control --overwrite
+
+    - name: Label frontend node
+      shell: |
+        NODE=$(kubectl get nodes -o wide | awk '/10\.0\.1\.11/ {print $1}')
+        kubectl label node $NODE role=frontend --overwrite
+
+    - name: Label backend node
+      shell: |
+        NODE=$(kubectl get nodes -o wide | awk '/10\.0\.1\.12/ {print $1}')
+        kubectl label node $NODE role=backend --overwrite
