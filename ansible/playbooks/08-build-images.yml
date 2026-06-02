@@ -1,0 +1,150 @@
+- hosts: backend
+  become: yes
+  tasks:
+    - name: Install rsync and docker
+      apt:
+        name: 
+          - rsync
+          - docker.io
+        state: present
+        update_cache: yes
+
+    - name: Copy backend code to EC2
+      synchronize:
+        src: ../../backend/
+        dest: /home/ubuntu/backend/
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+
+    - name: Build backend Docker image
+      command: docker build -t codesync-backend:latest /home/ubuntu/backend/
+      async: 600
+      poll: 10
+
+    - name: Import backend image to containerd
+      shell: docker save codesync-backend:latest | ctr -n k8s.io images import -
+
+    - name: Generate SSH key pair for backend-to-frontend
+      shell: |
+        if [ ! -f /home/ubuntu/.ssh/codesync_rsa ]; then
+          ssh-keygen -t rsa -b 2048 -f /home/ubuntu/.ssh/codesync_rsa -N "" -q
+        fi
+        cat /home/ubuntu/.ssh/codesync_rsa | base64 -w 0
+      register: ssh_key_b64
+
+    - name: Read public key
+      shell: cat /home/ubuntu/.ssh/codesync_rsa.pub
+      register: ssh_pub_key
+
+    - name: Save SSH key for k8s secret
+      set_fact:
+        ssh_private_key_b64: "{{ ssh_key_b64.stdout }}"
+        ssh_public_key: "{{ ssh_pub_key.stdout }}"
+
+- hosts: frontend
+  become: yes
+  tasks:
+    - name: Install rsync and docker
+      apt:
+        name: 
+          - rsync
+          - docker.io
+          - git
+        state: present
+        update_cache: yes
+
+    - name: Add backend SSH public key to frontend authorized_keys
+      authorized_key:
+        user: ubuntu
+        state: present
+        key: "{{ hostvars['backend-node']['ssh_public_key'] }}"
+
+    - name: Create repos directory
+      file:
+        path: /repos
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy frontend landing code to EC2
+      synchronize:
+        src: ../../frontend/landing/
+        dest: /home/ubuntu/landing/
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=dist"
+          - "--exclude=.git"
+
+    - name: Copy frontend ide code to EC2
+      synchronize:
+        src: ../../frontend/ide/
+        dest: /home/ubuntu/ide/
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=dist"
+          - "--exclude=.git"
+
+    - name: Build landing Docker image
+      command: docker build -t codesync-landing:latest /home/ubuntu/landing/
+      async: 600
+      poll: 10
+
+    - name: Build IDE Docker image
+      command: docker build -t codesync-ide:latest /home/ubuntu/ide/
+      async: 600
+      poll: 10
+
+    - name: Import landing image to containerd
+      shell: docker save codesync-landing:latest | ctr -n k8s.io images import -
+
+    - name: Import IDE image to containerd
+      shell: docker save codesync-ide:latest | ctr -n k8s.io images import -
+
+- hosts: control
+  become: yes
+  become_user: ubuntu
+  tasks:
+    - name: Update backend secret with real SSH key
+      shell: |
+        kubectl delete secret backend-secret -n codesync --ignore-not-found
+        kubectl create secret generic backend-secret -n codesync \
+          --from-literal=SSH_PRIVATE_KEY="{{ hostvars['backend-node']['ssh_private_key_b64'] }}"
+
+    - name: Re-copy k8s manifests
+      copy:
+        src: ../../k8s
+        dest: /home/ubuntu/
+        owner: ubuntu
+        group: ubuntu
+        mode: 0755
+      become: yes
+      become_user: root
+
+    - name: Re-apply all manifests
+      shell: |
+        kubectl apply -f /home/ubuntu/k8s/namespace.yaml
+        kubectl apply -f /home/ubuntu/k8s/postgres/secret.yaml
+        kubectl apply -f /home/ubuntu/k8s/postgres/service.yaml
+        kubectl apply -f /home/ubuntu/k8s/postgres/deployment.yaml
+        kubectl apply -f /home/ubuntu/k8s/backend/configmap.yaml
+        kubectl apply -f /home/ubuntu/k8s/backend/service.yaml
+        kubectl apply -f /home/ubuntu/k8s/backend/deployment.yaml
+        kubectl apply -f /home/ubuntu/k8s/frontend/
+
+    - name: Restart all deployments to pick up new images
+      shell: |
+        kubectl rollout restart deployment -n codesync
+
+    - name: Wait for pods to stabilize
+      shell: kubectl get pods -n codesync -o wide
+      register: pod_status
+      retries: 10
+      delay: 15
+      until: "'CrashLoopBackOff' not in pod_status.stdout and 'Pending' not in pod_status.stdout"
+      ignore_errors: yes
+
+    - name: Show final pod status
+      debug:
+        var: pod_status.stdout_lines
