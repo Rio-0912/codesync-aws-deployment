@@ -1,0 +1,74 @@
+- hosts: control
+  become: yes
+  tasks:
+    - name: Remove old Jenkins list
+      file:
+        path: /etc/apt/sources.list.d/jenkins.list
+        state: absent
+
+    - name: Add Jenkins apt key
+      apt_key:
+        keyserver: keyserver.ubuntu.com
+        id: 7198F4B714ABFC68
+
+    - name: Add Jenkins repository
+      apt_repository:
+        repo: "deb https://pkg.jenkins.io/debian-stable binary/"
+        state: present
+        filename: jenkins
+
+    - name: Install NodeSource Node.js 20 repo
+      shell: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+    - name: Install Java, Jenkins, and Node.js
+      apt:
+        name:
+          - openjdk-21-jdk
+          - jenkins
+          - nodejs
+          - psmisc
+        state: present
+        update_cache: yes
+
+    - name: Ensure Jenkins init.groovy.d directory exists
+      file:
+        path: /var/lib/jenkins/init.groovy.d
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: '0755'
+
+    - name: Copy Jenkins init scripts
+      copy:
+        src: "../../jenkins/init.groovy.d/{{ item }}"
+        dest: "/var/lib/jenkins/init.groovy.d/{{ item }}"
+        owner: jenkins
+        group: jenkins
+        mode: '0644'
+      loop:
+        - 00-install-plugins.groovy
+        - 01-create-admin.groovy
+        - 02-create-job.groovy
+
+    - name: Update Jenkins listening address to 0.0.0.0
+      lineinfile:
+        path: /lib/systemd/system/jenkins.service
+        regexp: '^Environment="JENKINS_LISTEN_ADDRESS=.*"'
+        line: 'Environment="JENKINS_LISTEN_ADDRESS=0.0.0.0"'
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Ensure Jenkins is started and enabled
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Reload systemd and restart jenkins
+      systemd:
+        daemon_reload: yes
+        name: jenkins
+        state: restarted
