@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: codesync
+data:
+  PORT: "4000"
+  FRONTEND_PUBLIC_IP: "65.1.11.25"
+  FRONTEND_HOST: "65.1.11.25"
+  FRONTEND_SSH_USER: "ubuntu"
+  REPOS_BASE_PATH: "/repos"
+  DATABASE_URL: "postgresql://codesync:codesync123@postgres-service:5432/codesync?schema=public"
+  JENKINS_URL: "http://10.0.1.10:8080"
