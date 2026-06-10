@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins-deployment
+  namespace: codesync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        app: jenkins
+    spec:
+      nodeSelector:
+        role: control
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: jenkins
+          image: codesync-jenkins:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+          ports:
+            - containerPort: 8080
+            - containerPort: 50000
+            - containerPort: 4567
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+            - name: ssh-key
+              mountPath: /var/jenkins_home/.ssh/id_rsa
+              readOnly: true
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: jenkins-home
+          hostPath:
+            path: /data/jenkins
+            type: DirectoryOrCreate
+        - name: ssh-key
+          hostPath:
+            path: /home/ubuntu/.ssh/id_rsa
+            type: File
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
