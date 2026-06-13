@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id          String         @id @default(uuid()) @db.Uuid
+  code        String         @unique @db.Char(6)
+  repoUrl     String         @map("repo_url")
+  language    String         @default("javascript")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  lastActive  DateTime       @default(now()) @map("last_active") @db.Timestamptz
+  snapshots   FileSnapshot[]
+  sessions    RoomSession[]
+
+  @@map("rooms")
+}
+
+model FileSnapshot {
+  id        String   @id @default(uuid()) @db.Uuid
+  roomId    String   @map("room_id") @db.Uuid
+  filePath  String   @map("file_path")
+  content   String?
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, filePath])
+  @@map("file_snapshots")
+}
+
+model RoomSession {
+  id       String    @id @default(uuid()) @db.Uuid
+  roomId   String    @map("room_id") @db.Uuid
+  username String
+  color    String
+  joinedAt DateTime  @default(now()) @map("joined_at") @db.Timestamptz
+  leftAt   DateTime? @map("left_at") @db.Timestamptz
+  room     Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("room_sessions")
+}
