@@ -12,6 +12,7 @@ COPY . .
 
 RUN npx prisma generate
 
+ENV PORT=4000
 EXPOSE 4000
 
 CMD npx prisma db push && pnpm start
