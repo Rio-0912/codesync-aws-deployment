@@ -1249,4 +1249,4 @@ terraform destroy -var="key_name=codesync-key"
 
 ---
 
-*End of CLAUDE.md*
+*End of ARCHITECTURE.md*
