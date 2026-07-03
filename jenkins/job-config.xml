@@ -1,0 +1,143 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <actions>
+    <org.jenkinsci.plugins.workflow.multibranch.JobPropertyStepQueueDecisionAction plugin="workflow-multibranch"/>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>REPO_URL</name>
+          <description>Git repository URL (e.g. https://github.com/user/repo.git)</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BRANCH</name>
+          <description>Branch to pull</description>
+          <defaultValue>main</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'REPO_URL',
+            defaultValue: '',
+            description: 'Git repository URL (e.g. https://github.com/user/repo.git)'
+        )
+        string(
+            name: 'BRANCH',
+            defaultValue: 'main',
+            description: 'Branch to pull'
+        )
+    }
+
+    environment {
+        APP_DIR = '/var/jenkins_home/workspace/app'
+        APP_PORT = '4567'
+    }
+
+    stages {
+        stage('Validate Input') {
+            steps {
+                script {
+                    if (!params.REPO_URL?.trim()) {
+                        error "REPO_URL parameter is required."
+                    }
+                    echo "Repository : ${params.REPO_URL}"
+                    echo "Branch     : ${params.BRANCH}"
+                }
+            }
+        }
+
+        stage('Check & Install Git') {
+            steps {
+                sh '''
+                    if command -v git > /dev/null 2>&1; then
+                        echo "Git already installed: $(git --version)"
+                    else
+                        echo "Git not found — installing..."
+                        apt-get update -qq
+                        apt-get install -y git
+                    fi
+                '''
+            }
+        }
+
+        stage('Check Node.js') {
+            steps {
+                sh '''
+                    if command -v node > /dev/null 2>&1; then
+                        echo "Node: $(node --version)"
+                        echo "NPM : $(npm --version)"
+                    else
+                        echo "WARNING: Node.js not found — install it before building."
+                    fi
+                '''
+            }
+        }
+
+        stage('Git Pull / Clone') {
+            steps {
+                sh """
+                    mkdir -p ${APP_DIR}
+                    if [ -d "${APP_DIR}/.git" ]; then
+                        echo "Repo exists — pulling..."
+                        cd ${APP_DIR}
+                        git fetch origin
+                        git checkout ${params.BRANCH}
+                        git pull origin ${params.BRANCH}
+                    else
+                        echo "Cloning repo..."
+                        git clone --branch ${params.BRANCH} ${params.REPO_URL} ${APP_DIR}
+                    fi
+                """
+            }
+        }
+
+        stage('Install & Build') {
+            steps {
+                sh """
+                    cd ${APP_DIR}
+                    npm install
+                    npm run build
+                """
+            }
+        }
+
+        stage('Serve') {
+            steps {
+                sh """
+                    fuser -k ${APP_PORT}/tcp || true
+                    cd ${APP_DIR}
+                    PORT=${APP_PORT} nohup npm run start > /tmp/app.log 2>&1 &
+                    echo "App running on port ${APP_PORT}"
+                """
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Pipeline failed. Check logs above."
+        }
+        success {
+            echo "Done — serving from ${params.REPO_URL} on port ${APP_PORT}"
+        }
+    }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

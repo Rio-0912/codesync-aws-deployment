@@ -1,0 +1,35 @@
+- hosts: control
+  become: yes
+  tasks:
+    - name: Install docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Copy jenkins folder
+      ansible.posix.synchronize:
+        src: ../../jenkins/
+        dest: /home/ubuntu/jenkins/
+        archive: no
+        recursive: yes
+        rsync_opts:
+          - "--exclude=node_modules"
+
+    - name: Build custom jenkins image
+      shell: docker build -t codesync-jenkins:latest /home/ubuntu/jenkins
+
+    - name: Import jenkins image to containerd
+      shell: docker save codesync-jenkins:latest | ctr -n k8s.io images import -
+
+    - name: Copy k8s files to control node
+      ansible.posix.synchronize:
+        src: ../../k8s/
+        dest: /home/ubuntu/k8s/
+        archive: no
+        recursive: yes
+
+    - name: Restart jenkins pod
+      shell: kubectl delete pod -l app=jenkins -n codesync || true
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf

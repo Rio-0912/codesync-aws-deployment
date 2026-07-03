@@ -7,23 +7,7 @@ CodeSync is a browser-based collaborative code editor, hosted on AWS, featuring 
 ## Architecture Overview
 
 The system runs entirely on standard AWS EC2 instances within a custom-configured Kubernetes cluster (using `kubeadm`), avoiding managed orchestration services to maintain direct host process control.
-
-```
-                  VPC (10.0.0.0/16)
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-        ▼                ▼                ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ codesync-    │ │ codesync-    │ │ codesync-    │
-│ control      │ │ frontend     │ │ backend      │
-│ (10.0.1.10)  │ │ (10.0.1.11)  │ │ (10.0.1.12)  │
-├──────────────┤ ├──────────────┤ ├──────────────┤
-│ PostgreSQL   │ │ Landing Page │ │ Express API  │
-│ Jenkins CI   │ │ Monaco IDE   │ │ Socket.io    │
-│ K8s Master   │ │ User Server  │ │ K8s Worker   │
-└──────────────┘ └──────────────┘ └──────────────┘
-```
+![alt text](image.png)
 
 ### Node Responsibilities
 
