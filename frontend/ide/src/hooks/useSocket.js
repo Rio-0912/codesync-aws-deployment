@@ -23,6 +23,7 @@ export const useSocket = (roomCode, username) => {
     });
 
     newSocket.on('disconnect', () => {
+      console.log('Socket disconnected from server');
       setConnected(false);
     });
 
